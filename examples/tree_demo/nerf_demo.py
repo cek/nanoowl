@@ -22,6 +22,8 @@ import weakref
 import cv2
 import time
 import PIL.Image
+import signal
+import sys
 import matplotlib.pyplot as plt
 from typing import List
 from nanoowl.tree import Tree
@@ -44,20 +46,83 @@ spin = kit.servo[15]
 spin.set_pulse_width_range(0,23200)
 spin.angle = 0
 
-spin_stop_value = 0
-spin_active_value = 23200
+fire = kit.servo[14]
+fire.set_pulse_width_range(0,23200)
+fire.angle = 0
+
 spin_start_time = 0
 is_spinning = False
+max_spin_time = 5
+max_fire_time = 2
+
+fire_start_time = 0
+is_firing = False
 
 min_spin = 0
 max_spin = 180
 
-detect_count = 0
-detect_threshold = 20
+# Number of consecutive frames with successful target detection
+target_detect_count = 0
+# Number of frames of constant detection before considering detection valid
+target_detect_threshold = 20
+
+# Number of consecutive frames with successful target detection
+fire_detect_count = 0
+# Number of frames of constant detection before considering detection valid
+fire_detect_threshold = 20
 
 max_state = float(1 << 16)
 spin_rest = 0
 spin_rest_value = max_state * (spin_rest / 180)
+
+
+def stop_firing():
+    global fire
+    global is_firing
+
+    print('STOP FIRING')
+    fire.angle = 0
+    is_firing = False
+    time.sleep(0.2)
+
+def stop_spinning():
+    global spin
+    global is_spinning
+
+    stop_firing()
+    print('STOP SPINNING')
+    spin.angle = 0
+    is_spinning = False
+
+def start_spinning():
+    global spin
+    global is_spinning
+    global spin_start_time
+
+    if not is_spinning:
+        print('START SPINNING')
+        spin.angle = 90
+        is_spinning = True
+        time.sleep(0.2)
+        spin_start_time = time.time()
+
+def start_firing():
+    global fire
+    global is_firing
+    global fire_start_time
+
+    if not is_firing:
+        start_spinning()
+        print('START FIRING')
+        fire.angle = 90
+        is_firing = True
+        fire_start_time = time.time()
+
+
+def signal_handler(sig, frame):
+    stop_firing()
+    stop_spinning()
+    sys.exit(0)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -65,10 +130,12 @@ if __name__ == "__main__":
     parser.add_argument("--image_quality", type=int, default=50)
     parser.add_argument("--port", type=int, default=7860)
     parser.add_argument("--host", type=str, default="0.0.0.0")
-    parser.add_argument("--camera", type=int, default=0)
+    parser.add_argument("--camera", type=int, default=1)
     parser.add_argument("--resolution", type=str, default="640x480", help="Camera resolution as WIDTHxHEIGHT")
     args = parser.parse_args()
     width, height = map(int, args.resolution.split("x"))
+
+    signal.signal(signal.SIGINT, signal_handler)
 
     CAMERA_DEVICE = args.camera
     IMAGE_QUALITY = args.image_quality
@@ -159,10 +226,14 @@ if __name__ == "__main__":
             global is_spinning
             global spin
             global spin_start_time
-            global spin_stop_value
-            global spin_active_value
-            global detect_count
-            global detect_threshold
+            global target_detect_count
+            global target_detect_threshold
+            global max_spin_time
+            global fire
+            global fire_start_time
+            global fire_detect_count
+            global fire_detect_threshold
+            global max_fire_time
 
             re, image = camera.read()
 
@@ -170,12 +241,15 @@ if __name__ == "__main__":
                 return re, None
 
             image_pil = cv2_to_pil(image)
+            # Regardless of detection, stop spinning after max_spin_time seconds
             if is_spinning:
-                elapsed_time = time.time() - spin_start_time
-                if elapsed_time > 2:
-                    logging.info("STOP SPIN")
-                    spin.angle = 180
-                    is_spinning = False
+                cur_time = time.time()
+                elapsed_time = cur_time - spin_start_time
+                if elapsed_time > max_spin_time:
+                    stop_spinning()
+                    stop_firing()
+                if not is_firing and elapsed_time > 1:
+                    start_firing()
 
             if prompt_data is not None:
                 prompt_data_local = prompt_data
@@ -188,15 +262,12 @@ if __name__ == "__main__":
                 )
                 if len(detections.detections) > 1:
                     if not is_spinning:
-                        detect_count += 1
-                        if detect_count > detect_threshold:
-                            logging.info("START SPIN")
-                            spin_start_time = time.time()
-                            is_spinning = True
-                            spin.angle = 90
-                            detect_count = 0
-                elif detect_count > 0:
-                    detect_count = 0
+                        target_detect_count += 1
+                        if target_detect_count > target_detect_threshold:
+                            start_spinning()
+                            target_detect_count = 0
+                elif target_detect_count > 0:
+                    target_detect_count = 0
                 t1 = time.perf_counter_ns()
                 dt = (t1 - t0) / 1e9
                 tree = prompt_data_local['tree']
