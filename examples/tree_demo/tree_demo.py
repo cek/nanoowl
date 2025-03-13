@@ -39,7 +39,7 @@ if __name__ == "__main__":
     parser.add_argument("--port", type=int, default=7860)
     parser.add_argument("--host", type=str, default="0.0.0.0")
     parser.add_argument("--camera", type=int, default=0)
-    parser.add_argument("--resolution", type=str, default="640x480", help="Camera resolution as WIDTHxHEIGHT")
+    parser.add_argument("--resolution", type=str, default="1920x1080", help="Camera resolution as WIDTHxHEIGHT")
     args = parser.parse_args()
     width, height = map(int, args.resolution.split("x"))
 
@@ -122,9 +122,11 @@ if __name__ == "__main__":
 
         logging.info("Opening camera.")
 
-        camera = cv2.VideoCapture(CAMERA_DEVICE)
-        camera.set(cv2.CAP_PROP_FRAME_WIDTH, width)
-        camera.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+        #camera = cv2.VideoCapture(CAMERA_DEVICE)
+        camera = cv2.VideoCapture('nvarguscamerasrc ! video/x-raw(memory:NVMM), width=1920, height=1080, format=(string)NV12, framerate=(fraction)30/1 ! nvvidconv flip-method=2 ! video/x-raw, format=(string)BGRx ! videoconvert ! video/x-raw, format=(string)BGR ! appsink' , cv2.CAP_GSTREAMER)
+
+        #camera.set(cv2.CAP_PROP_FRAME_WIDTH, width)
+        #camera.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
 
         logging.info("Loading predictor.")
 

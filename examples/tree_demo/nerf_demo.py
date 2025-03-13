@@ -35,11 +35,7 @@ from nanoowl.owl_predictor import OwlPredictor
 #from adafruit_servokit import ServoKit
 from SMBusServoKit import ServoKit
 import time
-import board
-from busio import I2C
 
-#i2c = I2C(board.SCL, board.SDA)
-#kit = ServoKit(channels=16, i2c=i2c, address=0x44)
 kit = ServoKit(channels=16, bus=7, address=0x44)
 
 spin = kit.servo[15]
